@@ -5,38 +5,39 @@ It covers installation, publishing, configuration, HTTPS setup, and troubleshoot
 
 ---
 
-## 🧭 Quick Setup Plan
+# Quick plan
 
-1. ✅ Install IIS (GUI or Command Line)
-2. ✅ Install the **.NET 9 Hosting Bundle**
-3. ✅ Publish your applications
-4. ✅ Create Application Pool & Site in IIS
-5. ✅ Configure folder permissions
-6. ✅ Bind HTTP/HTTPS and test
-7. ✅ Troubleshoot if necessary
+1. Install IIS (GUI or PowerShell/DISM).
+2. Install the .NET 9 **Hosting Bundle** (adds ASP.NET Core Module for IIS).
+3. Publish your apps (framework-dependent or self-contained).
+4. Create App Pool + Site in IIS and point to published folder.
+5. Configure permissions, bindings (HTTP/HTTPS) and test.
+6. Troubleshoot if something breaks.
 
 ---
 
-## 1️⃣ Install IIS
+# 1) Install IIS (Windows GUI or Command line)
 
-### Option A: Windows GUI (Windows 10 / 11 / Server)
-1. Open **Control Panel → Programs → Turn Windows features on or off**
-2. Enable these options:
-   - **Internet Information Services**
-   - **Web Management Tools → IIS Management Console**
-   - **World Wide Web Services → Common HTTP Features**
-   -   (Optional but helpful)    **Application Development Features → CGI, ISAPI Extensions**             and
-      **Health and Diagnostics → Request Monitor** and**Security → Request Filtering**
-3. Click **OK**, wait for installation, then run `inetmgr` to open IIS Manager.
+**GUI (Windows 10 / 11 / Server with Desktop):**
 
-### Option B: Command Line
+1. Open **Control Panel → Programs → Turn Windows features on or off**.
+2. Check **Internet Information Services**. Under it make sure:
 
-**Windows Server (PowerShell as Administrator):**
+   * **Web Management Tools → IIS Management Console** is checked.
+   * **World Wide Web Services → Common HTTP Features** (Static Content, Default Document, HTTP Errors) is checked.
+   * (Optional but useful) **Application Development Features** (CGI, ISAPI Extensions) and **Health and Diagnostics → Request Monitor** and **Security → Request Filtering**.
+3. Click **OK** and wait for installation to finish.
+4. Start IIS Manager: press `Win + R`, type `inetmgr` and Enter.
+
+**PowerShell / DISM (headless or scriptable):**
+
+* On **Windows Server** (run PowerShell as Administrator):
+
 ```powershell
 Install-WindowsFeature -name Web-Server -IncludeManagementTools
 ````
 
-**Windows 10/11 (DISM):**
+* On **Windows 10/11** (use DISM in an elevated cmd/powershell):
 
 ```powershell
 dism /online /enable-feature /featurename:IIS-WebServer /all
@@ -44,94 +45,75 @@ dism /online /enable-feature /featurename:IIS-WebServer /all
 
 ---
 
-## 2️⃣ Install the .NET 9 Hosting Bundle
+# 2) Install the .NET 9 Hosting Bundle (required for IIS hosting, unless you publish self-contained)
 
-Download and install the **ASP.NET Core Hosting Bundle** for .NET 9 from Microsoft:
+* Download and **run the ASP.NET Core Hosting Bundle** installer that matches your .NET 9 runtime (from Microsoft). Run the installer **as Administrator**.
+* After install: run `iisreset` (or restart machine).
 
-👉 [Download Hosting Bundle](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
+**Why:** the Hosting Bundle installs the .NET runtime (if needed) and the **ASP.NET Core Module (ANCM)** which lets IIS act as a reverse proxy to Kestrel.
 
-Run the installer **as Administrator**, then restart IIS:
-
-```powershell
-iisreset
-```
-
-> 💡 The Hosting Bundle installs the **ASP.NET Core Module (ANCM)** that enables IIS to host .NET Core/9 applications via Kestrel.
+> Alternative: Publish **self-contained** (see publish section). That removes the need for the hosting bundle on the server.
 
 ---
 
-## 3️⃣ Publish Your Application
+# 3) Publish your app (two common approaches)
 
-You can publish via **CLI** or **Visual Studio**.
-
-### Option A: Framework-dependent (Recommended)
-
-Requires Hosting Bundle on the server.
+**A. Framework-dependent (recommended, smaller):**
+From your project folder:
 
 ```bash
 dotnet publish -c Release -o "C:\inetpub\wwwroot\MyApi"
 ```
 
-### Option B: Self-contained (No Hosting Bundle required)
+This produces `MyApi.dll` and supporting files. IIS + Hosting Bundle must be present.
+
+**B. Self-contained (no Hosting Bundle required):**
 
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained true -o "C:\inetpub\wwwroot\MyApi"
 ```
 
-### Option C: Visual Studio
+This produces an exe (MyApi.exe) and everything bundled — heavier but portable.
 
-1. Right-click your project → **Publish**
-2. Choose **Folder**
-3. Set target path (e.g., `C:\inetpub\wwwroot\MyApi`)
-4. Click **Publish**
+**Visual Studio:**
 
----
-
-## 4️⃣ Create IIS Application Pool & Website
-
-### Create App Pool
-
-1. Open **IIS Manager**
-2. Right-click **Application Pools → Add Application Pool**
-3. Name: `MyApiPool`
-4. **.NET CLR Version**: `No Managed Code`
-5. Click **OK**
-
-### Create Website
-
-1. Right-click **Sites → Add Website**
-2. **Site name:** `MyApiSite`
-3. **Physical path:** `C:\inetpub\wwwroot\MyApi`
-4. **Application pool:** `MyApiPool`
-5. **Binding:** Choose IP/Port (e.g., 80, 8071) and hostname (optional)
-6. Click **OK**
-
-> 🔁 To host both Web API and Web App:
-> Create separate sites with different ports or add one as an **Application** under another.
+* Right-click project → **Publish** → choose **Folder** target and set the output folder (e.g. `C:\inetpub\wwwroot\MyApi`). Click Publish.
 
 ---
 
-## 5️⃣ Configure Folder Permissions
+# 4) Create App Pool and Website in IIS
 
-Grant access to the App Pool identity so IIS can read files.
+1. Open **IIS Manager (inetmgr)**.
+2. **App Pool**:
 
-1. Right-click published folder → **Properties → Security → Edit → Add**
-2. Enter:
+   * Right click **Application Pools → Add Application Pool**.
+   * Name: `MyApiPool`. **.NET CLR version** = **No Managed Code**. (ASP.NET Core runs under the .NET Core runtime, not the .NET Framework CLR.)
+   * Managed pipeline: default.
+3. **Create Site**:
 
-   ```
-   IIS AppPool\MyApiPool
-   ```
-3. Click **Check Names → OK**
-4. Grant **Read & Execute**, **List folder**, **Read**
-5. Click **Apply → OK**
+   * Right click **Sites → Add Website**.
+   * **Site name**: `MyApiSite`.
+   * **Physical path**: `C:\inetpub\wwwroot\MyApi` (published folder).
+   * **Application pool**: choose `MyApiPool`.
+   * **Binding**: choose IP (All Unassigned or specific IP), port (80 for http or 8071 if you want), hostname if using host header. Click OK.
 
-> 🧱 If app writes logs/files, grant **Modify** permissions.
+If you need to host both API and web app: create two sites on different bindings (different ports or hostnames), or create one site and add the other app as an **Application** under it.
 
 ---
 
-## 6️⃣ `web.config` Examples
+# 5) Folder permissions (important)
 
-### Framework-dependent
+Give the app pool identity read (and write if you need logging) access to the folder:
+
+1. Right click published folder → Properties → Security → Edit → Add.
+2. In object name box type: `IIS AppPool\MyApiPool` and click **Check Names** then OK.
+3. Grant **Read & execute, List folder, Read** (or Modify if app writes files/logs).
+
+---
+
+# 6) `web.config` (IIS + ANCM) — examples
+
+**Framework-dependent (typical)**
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -149,123 +131,120 @@ Grant access to the App Pool identity so IIS can read files.
 </configuration>
 ```
 
-### Self-contained
+**Self-contained (processPath points to exe):**
 
 ```xml
 <aspNetCore processPath=".\MyApi.exe" arguments="" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="inprocess" />
 ```
 
----
-
-## 7️⃣ Enable HTTPS (Recommended)
-
-### Generate a Certificate
-
-In IIS:
-
-1. Select the server node → **Server Certificates**
-2. Click **Create Self-Signed Certificate**
-
-### Bind HTTPS
-
-1. Select your site → **Bindings → Add**
-2. Type: `https`, Port: `443`
-3. Select your certificate
-
-### Redirect HTTP → HTTPS
-
-Option 1 – via Code:
-
-```csharp
-app.UseHttpsRedirection();
-app.UseHsts();
-```
-
-Option 2 – via URL Rewrite (IIS module)
+> Visual Studio publish usually generates `web.config` for you. Set `stdoutLogEnabled="true"` only while debugging; create the `logs` folder and give IIS write permission if you enable it.
 
 ---
 
-## 8️⃣ Allow IIS Through Firewall
+# 7) HTTPS — certificates & redirect from HTTP to HTTPS
+
+**Get a cert**
+
+* For production: obtain certificate from a CA (or use Let’s Encrypt with tools like win-acme).
+* For quick testing: in IIS Manager → Server Certificates → **Create Self-Signed Certificate** (not for production).
+
+**Bind cert**
+
+* In IIS Manager → Sites → select site → **Bindings → Add** → Type `https`, port `443`, select certificate.
+
+**Redirect HTTP → HTTPS**
+
+* Option A: Add middleware in your app (`app.UseHttpsRedirection()` and `app.UseHsts()` in `Program.cs`), then ensure IIS forwards requests (default).
+* Option B: Use **URL Rewrite** module in IIS and create a rule to redirect http to https (needs URL Rewrite module installed).
+
+---
+
+# 8) Windows Firewall & external access
+
+If you want the site accessible from other machines:
 
 ```powershell
-# Allow HTTP
+# allow HTTP
 netsh advfirewall firewall add rule name="IIS HTTP" dir=in action=allow protocol=TCP localport=80
 
-# Allow HTTPS
+# allow HTTPS
 netsh advfirewall firewall add rule name="IIS HTTPS" dir=in action=allow protocol=TCP localport=443
 ```
 
-For custom port (e.g. 8071):
-
-```powershell
-netsh advfirewall firewall add rule name="IIS Custom Port" dir=in action=allow protocol=TCP localport=8071
-```
-
----
+# 9)🚑 Troubleshooting & Deployment Guide for .NET 9 Web API / Web App on IIS
 
 ## 9️⃣ Troubleshooting
 
-| Error                                                    | Cause                                  | Fix                                                             |
-| -------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------- |
-| **500.19 - Cannot read configuration file (0x80070005)** | IIS lacks permission to access folder  | Grant read permissions to `IIS AppPool\<AppPoolName>`           |
-| **500.30 - ANCM In-Process Start Failure**               | App crashed or runtime missing         | Run `dotnet MyApp.dll` manually to see the error                |
-| **404 - Not Found**                                      | Wrong binding or path                  | Verify physical path and bindings in IIS                        |
-| **Cleartext HTTP not permitted (Android)**               | MAUI app calling HTTP instead of HTTPS | Use HTTPS or configure `network_security_config.xml` (dev only) |
-
-Check detailed logs:
-
-* **Event Viewer → Windows Logs → Application**
-* `web.config` → set `stdoutLogEnabled="true"`
-
-Restart IIS after changes:
-
-```powershell
-iisreset
-```
+| **Error** | **Cause** | **Fix** |
+|------------|-----------|----------|
+| `500.19 - Cannot read configuration file (0x80070005)` | IIS lacks permission to access folder | Grant read permissions to `IIS AppPool\<AppPoolName>` |
+| `500.30 - ANCM In-Process Start Failure` | App crashed or runtime missing | Run `dotnet MyApp.dll` manually to see the error |
+| `404 - Not Found` | Wrong binding or physical path | Verify physical path and bindings in IIS |
+| `Cleartext HTTP not permitted (Android)` | MAUI app calling HTTP instead of HTTPS | Use **HTTPS** or configure `network_security_config.xml` (for development only) |
 
 ---
 
-## 🔍 Useful Commands
+### 🔍 Check Detailed Logs
 
-| Purpose                 | Command                                                   |              |
-| ----------------------- | --------------------------------------------------------- | ------------ |
-| Restart IIS             | `iisreset`                                                |              |
-| List ports              | `netstat -ano                                             | findstr :80` |
-| Publish project         | `dotnet publish -c Release -o "C:\inetpub\wwwroot\MyApi"` |              |
-| Check installed runtime | `dotnet --list-runtimes`                                  |              |
+- Open **Event Viewer → Windows Logs → Application**
+- In your app’s `web.config`, temporarily enable logging:
+  ```xml
+  <aspNetCore ... stdoutLogEnabled="true" stdoutLogFile=".\logs\stdout" />
+````
+
+* Restart IIS after any change:
+
+  ```powershell
+  iisreset
+  ```
+
+---
+
+## 🔧 Useful Commands
+
+| **Purpose**              | **Command**                                               |
+| ------------------------ | --------------------------------------------------------- |
+| Restart IIS              | `iisreset`                                                |
+| List all listening ports | `netstat -ano`                                            |
+| Publish project          | `dotnet publish -c Release -o "C:\inetpub\wwwroot\MyApi"` |
+| Check installed runtimes | `dotnet --list-runtimes`                                  |
 
 ---
 
 ## ✅ Deployment Checklist
 
-* [ ] IIS Installed and running (`inetmgr`)
-* [ ] .NET 9 Hosting Bundle installed (unless self-contained)
-* [ ] Published folder accessible by IIS
-* [ ] App Pool uses “No Managed Code”
-* [ ] Folder permissions set (`IIS AppPool\<AppPoolName>`)
-* [ ] HTTP/HTTPS bindings configured
-* [ ] Firewall allows chosen port
-* [ ] HTTPS certificate configured (optional but recommended)
+* [x] IIS Installed and running (`inetmgr`)
+* [x] .NET 9 Hosting Bundle installed (unless published self-contained)
+* [x] Published folder accessible by IIS
+* [x] Application Pool uses **No Managed Code**
+* [x] Folder permissions set for `IIS AppPool\<AppPoolName>`
+* [x] HTTP/HTTPS bindings configured properly
+* [x] Firewall allows chosen port (80 / 443 / custom)
+* [x] HTTPS certificate configured (recommended for production)
 
 ---
 
 ## 🧠 Notes
 
-* Always publish to a neutral path (`C:\inetpub\wwwroot` or `D:\WebApps`), not Desktop or Documents.
-* Use dedicated App Pools for each site.
-* Disable `stdoutLogEnabled` in production.
-* Run apps under **Production** environment.
+* Always publish to a neutral path like:
+
+  * `C:\inetpub\wwwroot`
+  * `D:\WebApps`
+* Avoid hosting apps under **Desktop** or **Documents**
+* Use **dedicated App Pools** for each site
+* Disable `stdoutLogEnabled` in production
+* Ensure `ASPNETCORE_ENVIRONMENT` = **Production** in your config
 
 ---
 
-### 🛠 Example: Two Apps on IIS
+## 🛠 Example: Two Apps on IIS
 
-| App Type | Folder Path                   | Port | App Pool       |
-| -------- | ----------------------------- | ---- | -------------- |
-| Web API  | `C:\inetpub\wwwroot\MyApi`    | 8071 | `MyApiPool`    |
-| Web App  | `C:\inetpub\wwwroot\MyWebApp` | 8080 | `MyWebAppPool` |
+| **App Type** | **Folder Path**               | **Port** | **App Pool**   |
+| ------------ | ----------------------------- | -------- | -------------- |
+| Web API      | `C:\inetpub\wwwroot\MyApi`    | `8071`   | `MyApiPool`    |
+| Web App      | `C:\inetpub\wwwroot\MyWebApp` | `8080`   | `MyWebAppPool` |
 
-Access:
+**Access URLs:**
 
 * API → [http://localhost:8071](http://localhost:8071)
 * Web App → [http://localhost:8080](http://localhost:8080)
@@ -274,12 +253,20 @@ Access:
 
 ## 🏁 Done!
 
-Your **.NET 9 Web API** and **Web Application** are now hosted on IIS 🎉
-You can access them via `http://<Your-IP>:<Port>` or `https://<Your-Domain>`.
+🎉 Your **.NET 9 Web API** and **ASP.NET Core Web Application** are now successfully hosted on IIS.
+You can access them via:
+
+```
+http://<Your-IP>:<Port>
+https://<Your-Domain>
+```
 
 ---
 
-> 🧩 *Author: Bhakta Charan Rout*
-> *Environment: Windows + IIS + .NET 9 *
+### 🧩 Author
+
+**Name:** Bhakta Charan Rout
+**Environment:** Windows + IIS + .NET 9 + SQL Server
 
 ```
+
