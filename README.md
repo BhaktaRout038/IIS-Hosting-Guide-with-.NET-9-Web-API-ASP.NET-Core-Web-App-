@@ -226,13 +226,14 @@ netsh advfirewall firewall add rule name="IIS HTTPS" dir=in action=allow protoco
 
 ## 🧠 Notes
 
-* Always publish to a neutral path like:
+* Always publish to a neutral path (C:\inetpub\wwwroot or D:\WebApps), not Desktop or Documents.
 
-  * `C:\inetpub\wwwroot`
-  * `D:\WebApps`
-* Avoid hosting apps under **Desktop** or **Documents**
-* Use **dedicated App Pools** for each site
-* Disable `stdoutLogEnabled` in production
+* Use dedicated App Pools for each site.
+
+* Disable stdoutLogEnabled in production.
+
+* Run apps under Production environment.
+
 * Ensure `ASPNETCORE_ENVIRONMENT` = **Production** in your config
 
 ---
